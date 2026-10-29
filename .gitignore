@@ -1,0 +1,12 @@
+# Build output
+/tokenspend
+*.test
+*.prof
+
+# Generated reports and collected data
+*.html
+!internal/report/dashboard.html
+*.jsonl
+*.jsonl.gz
+
+.DS_Store

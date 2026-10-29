@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token spend</title>
+<style>
+.viz-root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.04);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
+  --critical: #d03b3b; --warning: #fab219;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .viz-root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface-1: #1a1a19;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+  }
+}
+:root[data-theme="dark"] .viz-root {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface-1: #1a1a19;
+  --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+.viz-root {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px; line-height: 1.45;
+  background: var(--page); color: var(--text-primary); min-height: 100vh; padding: 24px 28px 64px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; }
+h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+h2 { font-size: 16px; font-weight: 600; margin: 0 0 2px; }
+h3 { font-size: 14px; font-weight: 600; margin: 18px 0 6px; }
+.sub { color: var(--text-secondary); margin: 0 0 14px; max-width: 900px; }
+.muted { color: var(--text-muted); }
+.filters { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin: 16px 0 20px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface-1); }
+.seg button { font: inherit; border: 0; background: none; color: var(--text-secondary); padding: 6px 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button:hover { background: var(--wash); }
+.seg button[aria-pressed="true"] { color: var(--text-primary); font-weight: 600; background: var(--wash); }
+.filters label { color: var(--text-muted); font-size: 12px; margin-right: 6px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 18px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.tiles .tile.hero { grid-column: span 2; }
+.tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.tile .label { color: var(--text-secondary); font-size: 13px; }
+.tile .value { font-size: 24px; font-weight: 600; margin-top: 2px; }
+.tile.hero .value { font-size: 48px; line-height: 1.1; }
+.tile .note { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+.tablewrap { overflow-x: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 6px 0 4px; color: var(--text-secondary); font-size: 12px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.legend i.line { height: 2px; width: 14px; border-radius: 1px; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { fill: var(--text-muted); font-size: 11px; font-family: inherit; }
+svg text.lbl { fill: var(--text-secondary); font-size: 12px; }
+svg text.val { fill: var(--text-primary); font-size: 12px; font-variant-numeric: tabular-nums; }
+svg .hit { fill: transparent; cursor: default; }
+svg .hit:hover + .hl, svg .col:hover .band { fill: var(--wash); }
+svg .mark:hover { filter: brightness(1.12); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--text-secondary); font-weight: 600; font-size: 12px; cursor: pointer; user-select: none; white-space: nowrap; }
+th.sorted::after { content: " ▾"; color: var(--text-muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.wrap { min-width: 240px; max-width: 520px; overflow-wrap: anywhere; }
+.tablewrap table { min-width: 760px; }
+td .key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.more { font: inherit; font-size: 12px; margin-top: 8px; background: none; border: 1px solid var(--border); color: var(--text-secondary); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+details > summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; margin-top: 8px; }
+.tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); max-width: 360px; display: none; }
+.tip .t { color: var(--text-secondary); margin-bottom: 4px; }
+.tip .r { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.tip .r b { font-variant-numeric: tabular-nums; min-width: 64px; text-align: right; }
+.tip .r i { display: inline-block; width: 12px; height: 2px; border-radius: 1px; }
+.callout { border-left: 3px solid var(--axis); padding: 6px 12px; color: var(--text-secondary); margin: 10px 0; }
+.warn-list li { color: var(--text-secondary); }
+code { font-size: 12px; background: var(--wash); padding: 1px 4px; border-radius: 4px; }
+.empty { color: var(--text-muted); padding: 12px 0; }
+</style>
+</head>
+<body>
+<div class="viz-root"><div class="wrap">
+  <h1>Where the tokens go</h1>
+  <p class="sub" id="subtitle"></p>
+
+  <div class="filters" role="toolbar" aria-label="Filters">
+    <div><label>Date range</label><span class="seg" id="f-range"></span></div>
+    <div><label>Tool</label><span class="seg" id="f-tool"></span></div>
+  </div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <section class="card">
+    <h2>Daily cost by source</h2>
+    <p class="sub">Main loop vs. everything else: subagents, Codex's guardian auto-review, compaction, and background calls (title generation, summaries, cache warming, and calls only visible in Claude Code's own cost counter).</p>
+    <div class="legend" id="lg-daily"></div>
+    <div id="ch-daily"></div>
+    <details><summary>Show data table</summary><div id="tb-daily"></div></details>
+  </section>
+
+  <section class="card">
+    <h2>By source</h2>
+    <p class="sub">Each tool's cost split by what made the call. The table breaks buckets down into the raw source each tool logs (Claude Code <code>query_source</code>, Codex <code>session_meta.source</code>, Pi entry kind).</p>
+    <div class="legend" id="lg-source"></div>
+    <div id="ch-source"></div>
+    <div id="tb-source"></div>
+  </section>
+
+  <section class="card">
+    <h2>By model</h2>
+    <p class="sub">Cost per model. <span class="muted">Basis: <b>recorded</b> = cost the tool wrote itself (Pi), <b>table</b> = computed from list prices, <b>assumed</b> = price not published, <b>unpriced</b> = missing from the price table (shown as $0).</span></p>
+    <div id="ch-model"></div>
+    <div id="tb-model"></div>
+  </section>
+
+  <section class="card">
+    <h2>Cache economics</h2>
+    <p class="sub">In an agent loop most input is re-read history, so the cache decides the bill. A <b>cache-miss request</b> here is one with ≥ 20K input tokens where less than half came from cache: those pay full or write price for the whole context.</p>
+    <div class="tiles" id="cache-tiles"></div>
+    <h3>Where each tool's money goes</h3>
+    <div class="legend" id="lg-cost"></div>
+    <div id="ch-cost"></div>
+    <h3>Per model</h3>
+    <div id="tb-cache"></div>
+  </section>
+
+  <section class="card">
+    <h2>Context attribution</h2>
+    <p class="sub">Input cost assigned to the transcript content that caused it. Every request re-reads its whole context, so each tool result, prompt or file read is charged a share of every later request that carried it, until compaction drops it. Item sizes are estimated from their text, then corrected per thread by fitting <i>actual input ≈ slope × estimated size + intercept</i> over the thread's requests: the slope adjusts for the model's tokenizer, and the intercept, which is context present in every request but never logged (a system prompt or tool schemas the transcript doesn't record), is <b>unattributed</b>. Each request's shares add up to its real input cost. The date filter here selects content by the day it entered context.</p>
+    <div class="callout" id="attrib-summary"></div>
+    <div class="grid2">
+      <div><h3>By content kind</h3><div id="ch-kind"></div></div>
+      <div><h3>By tool, MCP server or attachment</h3><div id="ch-group"></div></div>
+    </div>
+    <h3>Groups</h3>
+    <div id="tb-group"></div>
+    <h3>Files, commands and URLs</h3>
+    <p class="sub">The same content read repeatedly (a file opened in several sessions) is summed here.</p>
+    <div id="tb-target"></div>
+    <h3>Most expensive single items</h3>
+    <div id="tb-items"></div>
+  </section>
+
+  <section class="card">
+    <h2>Sessions</h2>
+    <div id="tb-sessions"></div>
+  </section>
+
+  <section class="card">
+    <h2>Claude Code: reported vs. computed</h2>
+    <p class="sub">Claude Code keeps a running cost counter per session (<code>cost-state</code>) that includes calls never written to the transcript. Where the counter's tokens exceed what transcripts and OTel explain, the gap appears above as <i>background / unlogged (cost-state gap)</i>. A counter <b>below</b> the transcript usually means the session was resumed: the counter only covers the last process.</p>
+    <div id="tb-recon"></div>
+  </section>
+
+  <section class="card" id="codex-limits-card">
+    <h2>Codex plan usage</h2>
+    <p class="sub">On a ChatGPT plan, Codex spend is rate-limit usage rather than dollars. Percent of each window used, last reading per hour.</p>
+    <div class="legend" id="lg-limits"></div>
+    <div id="ch-limits"></div>
+  </section>
+
+  <section class="card">
+    <h2>Method and caveats</h2>
+    <ul class="warn-list">
+      <li>All dollar figures are <b>API list-price equivalents</b>. On a subscription (Claude Max, ChatGPT Plus) you are not billed per token, but these numbers still rank where usage goes.</li>
+      <li>Claude Code transcripts repeat one API response over several lines; usage is counted once per <code>requestId</code>. Codex usage comes from <code>token_usage_record</code> (one per response, deduplicated by <code>response_id</code>). Pi records its own USD cost, which is used as-is.</li>
+      <li>OTel data (from <code>tokenspend otel</code>) adds requests no transcript recorded and supplies Claude Code's <code>query_source</code> for requests the transcript doesn't label.</li>
+      <li>Cache-write TTL is unknown for the cost-state gap; it is priced as 5-minute writes.</li>
+    </ul>
+    <h3>Price table (USD per million tokens)</h3>
+    <div id="tb-prices"></div>
+    <h3>Data warnings</h3>
+    <ul class="warn-list" id="warnings"></ul>
+  </section>
+</div></div>
+<div class="tip" id="tip" role="tooltip"></div>
+
+<script id="data" type="application/json">/*__DATA__*/null</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById("data").textContent);
+const S = D.strings, R = D.requests, N = R.t.length;
+const TOOLS = [["all", "All"], ["claude-code", "Claude Code"], ["codex", "Codex"], ["pi", "Pi"]];
+const TOOL_LABEL = Object.fromEntries(TOOLS);
+const RANGES = [["7", "Last 7 days"], ["30", "Last 30 days"], ["90", "Last 90 days"], ["all", "All time"]];
+const SOURCES = ["main", "subagent", "auto-review", "compaction", "background"]; // fixed order = fixed colors
+const SOURCE_COLOR = { "main": "var(--s1)", "subagent": "var(--s2)", "auto-review": "var(--s3)", "compaction": "var(--s4)", "background": "var(--s5)" };
+const COST_PARTS = [["unc", "Uncached input", "var(--s1)"], ["write", "Cache writes", "var(--s2)"], ["read", "Cache reads", "var(--s3)"], ["out", "Output", "var(--s4)"]];
+const state = { range: "30", tool: "all" };
+
+// ---------- formatting ----------
+const usd = v => v === 0 ? "$0" : Math.abs(v) < 0.01 ? "<$0.01" : "$" + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const usdShort = v => v >= 1000 ? "$" + compact(v) : usd(v);
+function compact(v) {
+  const a = Math.abs(v);
+  if (a >= 1e9) return (v / 1e9).toFixed(a >= 1e10 ? 0 : 1).replace(/\.0$/, "") + "B";
+  if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M";
+  if (a >= 1e3) return (v / 1e3).toFixed(a >= 1e4 ? 0 : 1).replace(/\.0$/, "") + "K";
+  return String(Math.round(v));
+}
+const pct = (a, b) => b > 0 ? (a / b * 100).toFixed(a / b >= 0.1 || a === 0 ? 0 : 1) + "%" : "–";
+const dayOf = t => { const d = new Date(t * 1000); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+const base = p => p ? p.replace(/\/+$/, "").split("/").pop() : "–";
+
+// ---------- DOM helpers (labels are untrusted: textContent only) ----------
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") e.className = v; else if (k === "style") e.style.cssText = v; else e.setAttribute(k, v);
+  }
+  for (const k of kids.flat()) if (k != null) e.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  return e;
+}
+const SVGNS = "http://www.w3.org/2000/svg";
+function sv(tag, attrs, text) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, v);
+  if (text != null) e.textContent = text;
+  return e;
+}
+function mount(id, node) { const c = document.getElementById(id); c.replaceChildren(); if (node) c.append(node); }
+function legend(id, items, line) {
+  mount(id, null);
+  const c = document.getElementById(id);
+  for (const [label, color] of items) c.append(el("span", {}, el("i", { class: line ? "line" : "", style: "background:" + color }), label));
+}
+
+// ---------- tooltip ----------
+const tip = document.getElementById("tip");
+function showTip(ev, title, rows) {
+  tip.replaceChildren(el("div", { class: "t" }, title));
+  for (const [label, value, color] of rows) {
+    tip.append(el("div", { class: "r" }, el("b", {}, value), color ? el("i", { style: "background:" + color }) : null, el("span", {}, label)));
+  }
+  tip.style.display = "block";
+  const r = ev.target.getBoundingClientRect ? ev.target.getBoundingClientRect() : null;
+  const x = ev.clientX ?? (r ? r.right : 0), y = ev.clientY ?? (r ? r.top : 0);
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.min(window.innerWidth - w - 8, x + 14) + "px";
+  tip.style.top = Math.max(8, Math.min(window.innerHeight - h - 8, y - h / 2)) + "px";
+}
+const hideTip = () => { tip.style.display = "none"; };
+function hoverable(node, title, rows) {
+  node.setAttribute("tabindex", "0");
+  node.addEventListener("pointermove", ev => showTip(ev, title, rows()));
+  node.addEventListener("focus", ev => showTip(ev, title, rows()));
+  node.addEventListener("pointerleave", hideTip);
+  node.addEventListener("blur", hideTip);
+}
+
+// Bar path with a 4px rounded data end and a square baseline end.
+function barPath(x, y, w, h, dir, round) {
+  const r = round ? Math.min(4, dir === "up" ? h : w, dir === "up" ? w / 2 : h / 2) : 0;
+  if (w <= 0 || h <= 0) return "";
+  if (dir === "up") return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+  return `M${x},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h - r}Q${x + w},${y + h} ${x + w - r},${y + h}H${x}Z`;
+}
+function niceMax(v) {
+  if (v <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v))), m = v / p;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p;
+}
+
+// ---------- charts ----------
+// Stacked columns over categories (days). series: [{label, color, values}]
+function stackedColumns(W, categories, series, fmt) {
+  const H = 240, L = 52, B = 26, T = 8, plotW = W - L - 8, plotH = H - B - T;
+  const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Stacked column chart" });
+  if (!categories.length) return el("div", { class: "empty" }, "No requests in this range.");
+  const totals = categories.map((_, i) => series.reduce((s, x) => s + x.values[i], 0));
+  const ymax = niceMax(Math.max(...totals));
+  for (let k = 0; k <= 4; k++) {
+    const v = ymax * k / 4, y = T + plotH - plotH * k / 4;
+    svg.append(sv("line", { x1: L, x2: W - 8, y1: y, y2: y, stroke: k ? "var(--grid)" : "var(--axis)", "stroke-width": 1 }));
+    svg.append(sv("text", { x: L - 6, y: y + 4, "text-anchor": "end" }, fmt(v)));
+  }
+  const band = plotW / categories.length, bw = Math.max(2, Math.min(24, band * 0.7));
+  const labelEvery = Math.ceil(categories.length / Math.max(2, Math.floor(plotW / 56)));
+  categories.forEach((cat, i) => {
+    const g = sv("g", { class: "col" });
+    const x0 = L + i * band;
+    g.append(sv("rect", { class: "band", x: x0, y: T, width: band, height: plotH, fill: "transparent" }));
+    let y = T + plotH;
+    const visible = series.filter(s => s.values[i] > 0);
+    visible.forEach((s, j) => {
+      const h = s.values[i] / ymax * plotH;
+      const gap = j < visible.length - 1 && h > 3 ? 2 : 0; // 2px surface gap between segments
+      const top = y - h;
+      g.append(sv("path", { class: "mark", d: barPath(x0 + (band - bw) / 2, top + gap, bw, Math.max(0, h - gap), "up", j === visible.length - 1), style: "fill:" + s.color }));
+      y = top;
+    });
+    if (i % labelEvery === 0) svg.append(sv("text", { x: x0 + band / 2, y: H - 8, "text-anchor": "middle" }, cat.slice(5)));
+    hoverable(g, cat, () => [["Total", fmt(totals[i]), null], ...series.filter(s => s.values[i] > 0).map(s => [s.label, fmt(s.values[i]), s.color])]);
+    svg.append(g);
+  });
+  return svg;
+}
+
+// Horizontal bars, one series. rows: [{label, value, rows: () => tooltip rows}]
+function hbars(W, rows, fmt, color) {
+  if (!rows.length) return el("div", { class: "empty" }, "Nothing to show.");
+  const LW = Math.min(300, Math.round(W * 0.38)), RH = 26, H = rows.length * RH + 4, VW = 90;
+  const max = Math.max(...rows.map(r => r.value), 1e-12);
+  const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Bar chart" });
+  svg.append(sv("line", { x1: LW, x2: LW, y1: 0, y2: H, stroke: "var(--axis)", "stroke-width": 1 }));
+  rows.forEach((r, i) => {
+    const y = i * RH + 2, w = Math.max(r.value > 0 ? 1 : 0, (W - LW - VW) * r.value / max);
+    const g = sv("g", {});
+    g.append(sv("rect", { class: "band", x: 0, y, width: W, height: RH, fill: "transparent" }));
+    g.append(sv("text", { class: "lbl", x: LW - 8, y: y + RH / 2 + 4, "text-anchor": "end" }, clip(r.label, Math.floor(LW / 6.6))));
+    g.append(sv("path", { class: "mark", d: barPath(LW, y + 5, w, RH - 10, "right", true), style: "fill:" + (r.color || color) }));
+    g.append(sv("text", { class: "val", x: LW + w + 6, y: y + RH / 2 + 4 }, fmt(r.value)));
+    hoverable(g, r.label, r.rows || (() => [["", fmt(r.value), null]]));
+    svg.append(g);
+  });
+  return svg;
+}
+
+// Horizontal 100%-free stacked bars. rows: [{label, parts: [values aligned with series]}]
+function stackedHBars(W, rows, series, fmt) {
+  if (!rows.length) return el("div", { class: "empty" }, "Nothing to show.");
+  const LW = 100, RH = 34, H = rows.length * RH + 4, VW = 90;
+  const totals = rows.map(r => r.parts.reduce((a, b) => a + b, 0));
+  const max = Math.max(...totals, 1e-12);
+  const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Stacked bar chart" });
+  svg.append(sv("line", { x1: LW, x2: LW, y1: 0, y2: H, stroke: "var(--axis)", "stroke-width": 1 }));
+  rows.forEach((r, i) => {
+    const y = i * RH + 2;
+    const g = sv("g", { class: "col" });
+    g.append(sv("rect", { class: "band", x: 0, y, width: W, height: RH, fill: "transparent" }));
+    g.append(sv("text", { class: "lbl", x: LW - 8, y: y + RH / 2 + 4, "text-anchor": "end" }, r.label));
+    let x = LW;
+    const vis = r.parts.map((v, k) => [v, k]).filter(([v]) => v > 0);
+    vis.forEach(([v, k], j) => {
+      const w = (W - LW - VW) * v / max, gap = j < vis.length - 1 && w > 3 ? 2 : 0;
+      g.append(sv("path", { class: "mark", d: barPath(x, y + 6, Math.max(0, w - gap), RH - 12, "right", j === vis.length - 1), style: "fill:" + series[k][1] }));
+      x += w;
+    });
+    g.append(sv("text", { class: "val", x: x + 6, y: y + RH / 2 + 4 }, fmt(totals[i])));
+    hoverable(g, r.label, () => [["Total", fmt(totals[i]), null], ...vis.map(([v, k]) => [series[k][0], fmt(v) + "  (" + pct(v, totals[i]) + ")", series[k][1]])]);
+    svg.append(g);
+  });
+  return svg;
+}
+
+// Lines over time with a snapping crosshair. series: [{label, color, points: [[t, v]]}]
+function lineChart(W, series, fmt, ymaxFixed) {
+  const all = series.flatMap(s => s.points);
+  if (!all.length) return el("div", { class: "empty" }, "No data in this range.");
+  const H = 200, L = 44, B = 24, T = 8, plotW = W - L - 12, plotH = H - B - T;
+  const t0 = Math.min(...all.map(p => p[0])), t1 = Math.max(...all.map(p => p[0])), span = Math.max(1, t1 - t0);
+  const ymax = ymaxFixed || niceMax(Math.max(...all.map(p => p[1])));
+  const X = t => L + (t - t0) / span * plotW, Y = v => T + plotH - v / ymax * plotH;
+  const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Line chart" });
+  for (let k = 0; k <= 4; k++) {
+    const v = ymax * k / 4;
+    svg.append(sv("line", { x1: L, x2: W - 12, y1: Y(v), y2: Y(v), stroke: k ? "var(--grid)" : "var(--axis)", "stroke-width": 1 }));
+    svg.append(sv("text", { x: L - 6, y: Y(v) + 4, "text-anchor": "end" }, fmt(v)));
+  }
+  for (let k = 0; k <= 5; k++) {
+    const t = t0 + span * k / 5;
+    svg.append(sv("text", { x: X(t), y: H - 6, "text-anchor": k === 0 ? "start" : k === 5 ? "end" : "middle" }, dayOf(t).slice(5)));
+  }
+  for (const s of series) {
+    if (!s.points.length) continue;
+    svg.append(sv("path", { d: s.points.map((p, i) => (i ? "L" : "M") + X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1)).join(""),
+      fill: "none", style: "stroke:" + s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    const last = s.points[s.points.length - 1];
+    svg.append(sv("circle", { cx: X(last[0]), cy: Y(last[1]), r: 4, style: "fill:" + s.color + ";stroke:var(--surface-1)", "stroke-width": 2 }));
+  }
+  const cross = sv("line", { y1: T, y2: T + plotH, stroke: "var(--axis)", "stroke-width": 1, visibility: "hidden" });
+  svg.append(cross);
+  const hit = sv("rect", { x: L, y: T, width: plotW, height: plotH, fill: "transparent" });
+  hit.addEventListener("pointermove", ev => {
+    const box = svg.getBoundingClientRect();
+    const t = t0 + ((ev.clientX - box.left) / box.width * W - L) / plotW * span;
+    const near = s => s.points.reduce((b, p) => Math.abs(p[0] - t) < Math.abs(b[0] - t) ? p : b, s.points[0]);
+    const ref = near(series[0]);
+    cross.setAttribute("x1", X(ref[0])); cross.setAttribute("x2", X(ref[0])); cross.setAttribute("visibility", "visible");
+    showTip(ev, new Date(ref[0] * 1000).toLocaleString(), series.filter(s => s.points.length).map(s => [s.label, fmt(near(s)[1]), s.color]));
+  });
+  hit.addEventListener("pointerleave", () => { hideTip(); cross.setAttribute("visibility", "hidden"); });
+  svg.append(hit);
+  return svg;
+}
+// Charts draw at their container's pixel width so text stays at its real size.
+const cw = id => Math.max(320, document.getElementById(id).clientWidth || 800);
+const clip = (s, n) => s.length > n ? s.slice(0, n - 1) + "…" : s;
+
+// ---------- sortable table ----------
+// cols: [{label, get, fmt?, num?, cls?, key?}]
+function table(cols, rows, opts = {}) {
+  const limit = opts.limit || 15;
+  let sortCol = opts.sort ?? cols.findIndex(c => c.num), desc = true, showAll = false;
+  const wrap = el("div", { class: "tablewrap" });
+  const render = () => {
+    const sorted = rows.slice();
+    if (sortCol >= 0) {
+      const g = cols[sortCol].get;
+      sorted.sort((a, b) => { const x = g(a), y = g(b); return (x < y ? -1 : x > y ? 1 : 0) * (desc ? -1 : 1); });
+    }
+    const shown = showAll ? sorted : sorted.slice(0, limit);
+    const thead = el("tr", {}, cols.map((c, i) => {
+      const th = el("th", { class: (c.num ? "num " : "") + (i === sortCol ? "sorted" : "") }, c.label);
+      th.addEventListener("click", () => { if (sortCol === i) desc = !desc; else { sortCol = i; desc = !!c.num; } render(); });
+      return th;
+    }));
+    const body = shown.map(r => el("tr", {}, cols.map(c => {
+      const v = c.get(r), td = el("td", { class: (c.num ? "num " : "") + (c.cls || "") });
+      if (c.key) td.append(el("span", { class: "key", style: "background:" + c.key(r) }));
+      td.append(c.fmt ? c.fmt(v, r) : v);
+      return td;
+    })));
+    const t = el("table", {}, el("thead", {}, thead), el("tbody", {}, body));
+    wrap.replaceChildren(rows.length ? t : el("div", { class: "empty" }, "Nothing in this range."));
+    if (rows.length > limit) {
+      const b = el("button", { class: "more" }, showAll ? "Show top " + limit : "Show all " + rows.length);
+      b.addEventListener("click", () => { showAll = !showAll; render(); });
+      wrap.append(b);
+    }
+  };
+  render();
+  return wrap;
+}
+
+// ---------- data selection ----------
+const maxT = N ? R.t[N - 1] : Date.now() / 1000;
+const genT = Math.max(maxT, Date.parse(D.generated) / 1000);
+function cutoff() { return state.range === "all" ? -Infinity : genT - Number(state.range) * 86400; }
+const cutoffDay = () => state.range === "all" ? "" : dayOf(cutoff());
+function selected() {
+  const c = cutoff(), out = [];
+  for (let i = 0; i < N; i++) {
+    if (R.t[i] < c) continue;
+    if (state.tool !== "all" && S[R.tool[i]] !== state.tool) continue;
+    out.push(i);
+  }
+  return out;
+}
+const costOf = i => R.c_unc[i] + R.c_read[i] + R.c_write[i] + R.c_out[i];
+const inputOf = i => R.unc[i] + R.read[i] + R.w5[i] + R.w1h[i];
+function groupBy(idx, keyFn) {
+  const m = new Map();
+  for (const i of idx) {
+    const k = keyFn(i);
+    let a = m.get(k);
+    if (!a) m.set(k, a = { key: k, n: 0, unc: 0, read: 0, w5: 0, w1h: 0, out: 0, c_unc: 0, c_read: 0, c_write: 0, c_out: 0, cost: 0, first: Infinity, last: 0, idx: [] });
+    a.n++; a.unc += R.unc[i]; a.read += R.read[i]; a.w5 += R.w5[i]; a.w1h += R.w1h[i]; a.out += R.out[i];
+    a.c_unc += R.c_unc[i]; a.c_read += R.c_read[i]; a.c_write += R.c_write[i]; a.c_out += R.c_out[i];
+    a.cost += costOf(i); a.first = Math.min(a.first, R.t[i]); a.last = Math.max(a.last, R.t[i]); a.idx.push(i);
+  }
+  return [...m.values()].map(a => Object.assign(a, { input: a.unc + a.read + a.w5 + a.w1h }));
+}
+const toolName = s => TOOL_LABEL[s] || s;
+
+// ---------- sections ----------
+function renderTiles(idx) {
+  let cost = 0, input = 0, read = 0, out = 0, offMain = 0;
+  for (const i of idx) {
+    const c = costOf(i);
+    cost += c; input += inputOf(i); read += R.read[i]; out += R.out[i];
+    if (S[R.source[i]] !== "main") offMain += c;
+  }
+  const tile = (label, value, note, hero) => el("div", { class: "tile" + (hero ? " hero" : "") }, el("div", { class: "label" }, label), el("div", { class: "value" }, value), note ? el("div", { class: "note" }, note) : null);
+  mount("tiles", null);
+  document.getElementById("tiles").append(
+    tile("Total cost (API list price)", usd(cost), idx.length.toLocaleString() + " requests", true),
+    tile("Input tokens", compact(input), pct(read, input) + " read from cache"),
+    tile("Output tokens", compact(out), "incl. reasoning"),
+    tile("Outside the main loop", pct(offMain, cost), usd(offMain) + " on subagents, review, compaction, background"),
+    tile("Cost per request", usd(idx.length ? cost / idx.length : 0), "mean across all sources"));
+}
+
+function renderDaily(idx) {
+  const days = [];
+  if (idx.length) {
+    const first = state.range === "all" ? R.t[idx[0]] : Math.max(cutoff(), R.t[idx[0]]);
+    // Step by 6 hours so DST changes can't skip or repeat a day.
+    for (let t = first; dayOf(t) <= dayOf(genT); t += 6 * 3600) if (days[days.length - 1] !== dayOf(t)) days.push(dayOf(t));
+  }
+  const pos = new Map(days.map((d, i) => [d, i]));
+  const series = SOURCES.map(s => ({ label: s, color: SOURCE_COLOR[s], values: days.map(() => 0) }));
+  for (const i of idx) {
+    const k = SOURCES.indexOf(S[R.source[i]]), p = pos.get(dayOf(R.t[i]));
+    if (k >= 0 && p !== undefined) series[k].values[p] += costOf(i);
+  }
+  const used = series.filter(s => s.values.some(v => v > 0));
+  legend("lg-daily", used.map(s => [s.label, s.color]));
+  mount("ch-daily", stackedColumns(cw("ch-daily"), days, used, usdShort));
+  mount("tb-daily", table([{ label: "Day", get: r => r.day }, ...used.map((s, k) => ({ label: s.label, num: true, get: r => r.v[k], fmt: usd })), { label: "Total", num: true, get: r => r.total, fmt: usd }],
+    days.map((d, p) => ({ day: d, v: used.map(s => s.values[p]), total: used.reduce((a, s) => a + s.values[p], 0) })), { limit: 120, sort: 0 }));
+}
+
+function renderSource(idx, total) {
+  const tools = groupBy(idx, i => S[R.tool[i]]).sort((a, b) => b.cost - a.cost);
+  const usedSources = SOURCES.filter(s => idx.some(i => S[R.source[i]] === s));
+  legend("lg-source", usedSources.map(s => [s, SOURCE_COLOR[s]]));
+  mount("ch-source", stackedHBars(cw("ch-source"), tools.map(t => ({ label: toolName(t.key), parts: usedSources.map(s => t.idx.reduce((a, i) => a + (S[R.source[i]] === s ? costOf(i) : 0), 0)) })),
+    usedSources.map(s => [s, SOURCE_COLOR[s]]), usd));
+  const rows = groupBy(idx, i => R.tool[i] + "|" + R.source[i] + "|" + R.detail[i]).map(a => {
+    const i = a.idx[0];
+    return Object.assign(a, { tool: S[R.tool[i]], source: S[R.source[i]], detail: S[R.detail[i]] });
+  });
+  mount("tb-source", table([
+    { label: "Tool", get: r => toolName(r.tool) },
+    { label: "Source", get: r => r.source, key: r => SOURCE_COLOR[r.source] || "var(--axis)" },
+    { label: "Detail", get: r => r.detail },
+    { label: "Requests", num: true, get: r => r.n, fmt: v => v.toLocaleString() },
+    { label: "Input", num: true, get: r => r.input, fmt: compact },
+    { label: "Cache hit", num: true, get: r => r.input ? r.read / r.input : 0, fmt: (v, r) => pct(r.read, r.input) },
+    { label: "Output", num: true, get: r => r.out, fmt: compact },
+    { label: "Cost", num: true, get: r => r.cost, fmt: usd },
+    { label: "Share", num: true, get: r => r.cost, fmt: v => pct(v, total) },
+  ], rows, { sort: 7 }));
+}
+
+function renderModel(idx, total) {
+  const rows = groupBy(idx, i => R.tool[i] + "|" + R.model[i]).map(a => {
+    const i = a.idx[0];
+    const bases = [...new Set(a.idx.map(j => S[R.basis[j]]))].join(", ");
+    return Object.assign(a, { tool: S[R.tool[i]], model: S[R.model[i]] || "(unknown)", basis: bases });
+  }).sort((a, b) => b.cost - a.cost);
+  mount("ch-model", hbars(cw("ch-model"), rows.slice(0, 15).map(r => ({
+    label: toolName(r.tool) + " · " + r.model, value: r.cost,
+    rows: () => [["cost", usd(r.cost), null], ["requests", r.n.toLocaleString(), null], ["per request", usd(r.cost / r.n), null], ["share", pct(r.cost, total), null]],
+  })), usd, "var(--s1)"));
+  mount("tb-model", table([
+    { label: "Tool", get: r => toolName(r.tool) },
+    { label: "Model", get: r => r.model },
+    { label: "Basis", get: r => r.basis },
+    { label: "Requests", num: true, get: r => r.n, fmt: v => v.toLocaleString() },
+    { label: "Input", num: true, get: r => r.input, fmt: compact },
+    { label: "Output", num: true, get: r => r.out, fmt: compact },
+    { label: "Cache hit", num: true, get: r => r.input ? r.read / r.input : 0, fmt: (v, r) => pct(r.read, r.input) },
+    { label: "Per request", num: true, get: r => r.cost / r.n, fmt: usd },
+    { label: "Cost", num: true, get: r => r.cost, fmt: usd },
+    { label: "Share", num: true, get: r => r.cost, fmt: v => pct(v, total) },
+  ], rows, { sort: 8 }));
+}
+
+function isMiss(i) { const inp = inputOf(i); return inp >= 20000 && R.read[i] < inp / 2; }
+function renderCache(idx, total) {
+  let input = 0, read = 0, writeCost = 0, missN = 0, missCost = 0;
+  for (const i of idx) {
+    input += inputOf(i); read += R.read[i]; writeCost += R.c_write[i];
+    if (isMiss(i)) { missN++; missCost += costOf(i); }
+  }
+  const tile = (label, value, note) => el("div", { class: "tile" }, el("div", { class: "label" }, label), el("div", { class: "value" }, value), el("div", { class: "note" }, note));
+  mount("cache-tiles", null);
+  document.getElementById("cache-tiles").append(
+    tile("Cache hit rate", pct(read, input), compact(read) + " of " + compact(input) + " input tokens"),
+    tile("Cache-miss requests", pct(missN, idx.length), missN.toLocaleString() + " requests"),
+    tile("…their share of cost", pct(missCost, total), usd(missCost)),
+    tile("Spent writing cache", pct(writeCost, total), usd(writeCost)));
+  legend("lg-cost", COST_PARTS.map(p => [p[1], p[2]]));
+  const tools = groupBy(idx, i => S[R.tool[i]]).sort((a, b) => b.cost - a.cost);
+  mount("ch-cost", stackedHBars(cw("ch-cost"), tools.map(t => ({ label: toolName(t.key), parts: [t.c_unc, t.c_write, t.c_read, t.c_out] })), COST_PARTS.map(p => [p[1], p[2]]), usd));
+  const rows = groupBy(idx, i => R.tool[i] + "|" + R.model[i]).map(a => {
+    const i = a.idx[0];
+    let miss = 0, missC = 0;
+    for (const j of a.idx) if (isMiss(j)) { miss++; missC += costOf(j); }
+    // 5m writes cost 1.25x input and 1h writes 2x, so split write cost by weighted tokens.
+    const wt = a.w5 * 1.25 + a.w1h * 2;
+    return Object.assign(a, { tool: S[R.tool[i]], model: S[R.model[i]], miss, missC, w1hCost: wt ? a.c_write * a.w1h * 2 / wt : 0 });
+  });
+  mount("tb-cache", table([
+    { label: "Tool", get: r => toolName(r.tool) },
+    { label: "Model", get: r => r.model },
+    { label: "Hit rate", num: true, get: r => r.input ? r.read / r.input : 0, fmt: (v, r) => pct(r.read, r.input) },
+    { label: "Write 5m", num: true, get: r => r.w5, fmt: compact },
+    { label: "Write 1h", num: true, get: r => r.w1h, fmt: compact },
+    { label: "Write $", num: true, get: r => r.c_write, fmt: usd },
+    { label: "…of which 1h", num: true, get: r => r.w1hCost, fmt: usd },
+    { label: "Read $", num: true, get: r => r.c_read, fmt: usd },
+    { label: "Uncached $", num: true, get: r => r.c_unc, fmt: usd },
+    { label: "Miss reqs", num: true, get: r => r.miss, fmt: (v, r) => v + " (" + pct(v, r.n) + ")" },
+    { label: "Miss $", num: true, get: r => r.missC, fmt: (v, r) => usd(v) + " (" + pct(v, r.cost) + ")" },
+  ], rows, { sort: 5 }));
+}
+
+function attribSelect(rows) {
+  const cd = cutoffDay();
+  return rows.filter(r => (!cd || r.day >= cd) && (state.tool === "all" || S[r.tool] === state.tool));
+}
+function renderAttribution(idx) {
+  const groups = attribSelect(D.attrib_groups);
+  let attributed = 0, unattributed = 0;
+  for (const g of groups) (S[g.kind] === "unattributed" ? (unattributed += g.cost) : (attributed += g.cost));
+  let inputCost = 0;
+  for (const i of idx) if (S[R.origin[i]] === "transcript") inputCost += R.c_unc[i] + R.c_read[i] + R.c_write[i];
+  const box = document.getElementById("attrib-summary");
+  box.replaceChildren(el("span", {}, "Transcript requests in range spent ", el("b", {}, usd(inputCost)), " on input. ",
+    el("b", {}, usd(attributed)), " of it is attributed to transcript content; ", el("b", {}, usd(unattributed)), " is unattributed (context never written to the transcript)."));
+
+  const byKind = new Map(), byGroup = new Map();
+  for (const g of groups) {
+    const k = S[g.kind];
+    byKind.set(k, (byKind.get(k) || 0) + g.cost);
+    if (k === "unattributed") continue;
+    const gk = S[g.group];
+    byGroup.set(gk, (byGroup.get(gk) || 0) + g.cost);
+  }
+  const kindRows = [...byKind].sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ label: k, value: v, rows: () => [["cost", usd(v), null], ["share of input", pct(v, attributed + unattributed), null]] }));
+  mount("ch-kind", hbars(cw("ch-kind"), kindRows, usd, "var(--s1)"));
+  const groupRows = [...byGroup].sort((a, b) => b[1] - a[1]).slice(0, 14).map(([k, v]) => ({ label: k, value: v, rows: () => [["cost", usd(v), null], ["share of attributed", pct(v, attributed), null]] }));
+  mount("ch-group", hbars(cw("ch-group"), groupRows, usd, "var(--s1)"));
+
+  const merged = new Map();
+  for (const g of groups) {
+    const key = g.tool + "|" + g.kind + "|" + g.group;
+    let a = merged.get(key);
+    if (!a) merged.set(key, a = { tool: S[g.tool], kind: S[g.kind], group: S[g.group], items: 0, est: 0, tt: 0, cost: 0 });
+    a.items += g.items; a.est += g.est; a.tt += g.tt; a.cost += g.cost;
+  }
+  mount("tb-group", table([
+    { label: "Tool", get: r => toolName(r.tool) },
+    { label: "Kind", get: r => r.kind },
+    { label: "Group", get: r => r.group, cls: "wrap" },
+    { label: "Items", num: true, get: r => r.items, fmt: v => v.toLocaleString() },
+    { label: "Avg size", num: true, get: r => r.est / r.items, fmt: compact },
+    { label: "Token-turns", num: true, get: r => r.tt, fmt: compact },
+    { label: "Cost", num: true, get: r => r.cost, fmt: usd },
+    { label: "Share", num: true, get: r => r.cost, fmt: v => pct(v, attributed + unattributed) },
+  ], [...merged.values()], { sort: 6 }));
+
+  const tmerged = new Map();
+  for (const t of attribSelect(D.attrib_targets)) {
+    const key = t.tool + "|" + t.group + "|" + t.target;
+    let a = tmerged.get(key);
+    if (!a) tmerged.set(key, a = { tool: S[t.tool], group: S[t.group], target: S[t.target], items: 0, est: 0, tt: 0, cost: 0 });
+    a.items += t.items; a.est += t.est; a.tt += t.tt; a.cost += t.cost;
+  }
+  mount("tb-target", table([
+    { label: "Tool", get: r => toolName(r.tool) },
+    { label: "Via", get: r => r.group },
+    { label: "Target", get: r => r.target, cls: "wrap" },
+    { label: "Times in context", num: true, get: r => r.items, fmt: v => v.toLocaleString() },
+    { label: "Est. tokens", num: true, get: r => r.est, fmt: compact },
+    { label: "Token-turns", num: true, get: r => r.tt, fmt: compact },
+    { label: "Cost", num: true, get: r => r.cost, fmt: usd },
+  ], [...tmerged.values()], { sort: 6 }));
+
+  mount("tb-items", table([
+    { label: "Tool", get: r => toolName(S[r.tool]) },
+    { label: "Day", get: r => r.day },
+    { label: "Project", get: r => base(S[r.project]) },
+    { label: "Kind", get: r => S[r.kind] },
+    { label: "Group", get: r => S[r.group] },
+    { label: "Target", get: r => S[r.target], cls: "wrap" },
+    { label: "Est. tokens", num: true, get: r => r.est, fmt: compact },
+    { label: "Carried by", num: true, get: r => r.requests, fmt: v => v + " req" },
+    { label: "Cost", num: true, get: r => r.cost, fmt: usd },
+  ], attribSelect(D.top_items), { sort: 8, limit: 20 }));
+}
+
+function renderSessions(idx, total) {
+  const rows = groupBy(idx, i => R.tool[i] + "|" + R.session[i]).map(a => {
+    const i = a.idx[0];
+    const models = groupBy(a.idx, j => S[R.model[j]]).sort((x, y) => y.cost - x.cost);
+    return Object.assign(a, { tool: S[R.tool[i]], session: S[R.session[i]], project: S[R.project[i]], model: models[0].key });
+  });
+  mount("tb-sessions", table([
+    { label: "Tool", get: r => toolName(r.tool) },
+    { label: "Project", get: r => base(r.project) },
+    { label: "Session", get: r => r.session.slice(0, 8) },
+    { label: "Started", get: r => r.first, fmt: v => new Date(v * 1000).toLocaleString() },
+    { label: "Main model", get: r => r.model },
+    { label: "Requests", num: true, get: r => r.n, fmt: v => v.toLocaleString() },
+    { label: "Input", num: true, get: r => r.input, fmt: compact },
+    { label: "Cache hit", num: true, get: r => r.input ? r.read / r.input : 0, fmt: (v, r) => pct(r.read, r.input) },
+    { label: "Per request", num: true, get: r => r.cost / r.n, fmt: usd },
+    { label: "Cost", num: true, get: r => r.cost, fmt: usd },
+    { label: "Share", num: true, get: r => r.cost, fmt: v => pct(v, total) },
+  ], rows, { sort: 9, limit: 20 }));
+}
+
+function renderRecon(idx) {
+  const inRange = new Set(idx.map(i => S[R.session[i]]));
+  const rows = (D.claude_sessions || []).filter(c => inRange.has(c.session));
+  document.querySelector("#tb-recon").closest("section").style.display = state.tool === "all" || state.tool === "claude-code" ? "" : "none";
+  const proj = new Map();
+  for (const i of idx) proj.set(S[R.session[i]], S[R.project[i]]);
+  mount("tb-recon", table([
+    { label: "Project", get: r => base(r.project || proj.get(r.session)) },
+    { label: "Session", get: r => r.session.slice(0, 8) },
+    { label: "Claude Code reports", num: true, get: r => r.reported_usd, fmt: usd },
+    { label: "Transcripts", num: true, get: r => r.transcript_usd, fmt: usd },
+    { label: "OTel only", num: true, get: r => r.otel_only_usd, fmt: usd },
+    { label: "Unlogged gap", num: true, get: r => r.unlogged_usd, fmt: usd },
+    { label: "Gap share", num: true, get: r => r.reported_usd ? r.unlogged_usd / r.reported_usd : 0, fmt: v => (v * 100).toFixed(0) + "%" },
+  ], rows, { sort: 5 }));
+}
+
+function renderLimits() {
+  const card = document.getElementById("codex-limits-card");
+  const c = cutoff();
+  const pts = (D.codex_rate_limits || []).map(s => ({ t: Date.parse(s.ts) / 1000, s })).filter(p => p.t >= c);
+  card.style.display = (state.tool === "all" || state.tool === "codex") && (D.codex_rate_limits || []).length ? "" : "none";
+  const first = pts[0]?.s || {};
+  const series = [
+    { label: (first.primary_window_min ? Math.round(first.primary_window_min / 60) + "-hour" : "Primary") + " window", color: "var(--s1)", points: pts.map(p => [p.t, p.s.primary_pct]) },
+    { label: (first.secondary_window_min ? Math.round(first.secondary_window_min / 1440) + "-day" : "Secondary") + " window", color: "var(--s2)", points: pts.map(p => [p.t, p.s.secondary_pct]) },
+  ];
+  legend("lg-limits", series.map(s => [s.label, s.color]), true);
+  mount("ch-limits", lineChart(cw("ch-limits"), series, v => Math.round(v) + "%", 100));
+}
+
+function renderStatic() {
+  const span = N ? dayOf(R.t[0]) + " to " + dayOf(R.t[N - 1]) : "no data";
+  document.getElementById("subtitle").textContent = "Claude Code, Codex and Pi usage from local logs and OTel exports, " + span + ". Generated " + new Date(D.generated).toLocaleString() + ".";
+  const per = v => v == null ? "" : "$" + v;
+  mount("tb-prices", table([
+    { label: "Model", get: r => r.model },
+    { label: "Input", num: true, get: r => r.input, fmt: per },
+    { label: "Cache read", num: true, get: r => r.cache_read, fmt: per },
+    { label: "Cache write", num: true, get: r => r.cache_write ?? (r.model.startsWith("claude-") ? r.input * 1.25 : r.input), fmt: per },
+    { label: "Write 1h", num: true, get: r => r.model.startsWith("claude-") ? (r.cache_write_1h ?? r.input * 2) : null, fmt: per },
+    { label: "Output", num: true, get: r => r.output, fmt: per },
+    { label: "Note", get: r => (r.assumed ? "assumed. " : "") + (r.note || "") + (r.long_context_threshold ? " Long-context rates above " + compact(r.long_context_threshold) + " input tokens." : "") },
+  ], D.prices || [], { sort: -1, limit: 40 }));
+  const ul = document.getElementById("warnings");
+  ul.replaceChildren(...(D.warnings && D.warnings.length ? D.warnings.map(w => el("li", {}, w)) : [el("li", {}, "None.")]));
+}
+
+function segment(id, options, key) {
+  const c = document.getElementById(id);
+  c.replaceChildren(...options.map(([v, label]) => {
+    const b = el("button", { type: "button", "aria-pressed": String(state[key] === v) }, label);
+    b.addEventListener("click", () => { state[key] = v; renderAll(); });
+    return b;
+  }));
+}
+
+function renderAll() {
+  segment("f-range", RANGES, "range");
+  segment("f-tool", TOOLS, "tool");
+  const idx = selected();
+  let total = 0;
+  for (const i of idx) total += costOf(i);
+  renderTiles(idx);
+  renderDaily(idx);
+  renderSource(idx, total);
+  renderModel(idx, total);
+  renderCache(idx, total);
+  renderAttribution(idx);
+  renderSessions(idx, total);
+  renderRecon(idx);
+  renderLimits();
+}
+renderStatic();
+renderAll();
+let resizeTimer, lastWidth = document.body.clientWidth;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (document.body.clientWidth !== lastWidth) { lastWidth = document.body.clientWidth; renderAll(); } }, 150);
+});
+</script>
+</body>
+</html>
